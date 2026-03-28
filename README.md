@@ -1,6 +1,6 @@
 # Custom-GameBoy-Sound-Engine
 
-# ======================================
+# ====================================
 
     sl3dz sound engie for GB version 1.0
 
@@ -8,7 +8,7 @@
 	
 		from amateur for everyone
 		
-# ======================================
+# ====================================
 
     # HOW TO USE
 
@@ -99,4 +99,4 @@
 		
 		> **Note:** octave is ignored and tempo doesn't move pointer
 		
-# ======================================
+# ====================================
