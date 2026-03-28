@@ -5,6 +5,8 @@
     sl3dz sound engie for GB version 1.0
 
         free to use sound engine
+			written in C with
+				GBDK 2020
 	
 		from amateur for everyone
 		
