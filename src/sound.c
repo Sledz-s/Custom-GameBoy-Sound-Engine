@@ -1,0 +1,375 @@
+/*            __  ________ ________  __________                                                                
+ *      _____|  | \_____  \\______ \ \____    /                                                                
+ *     /  ___/  |   _(__  < |    |  \  /     /                                                                 
+ *     \___ \|  |__/       \|    `   \/     /_                                                                 
+ *    /____  >____/______  /_______  /_______ \                                                                
+ *         \/            \/        \/        \/                                                                
+ *      __________________    _________                         ___ ___________               __               
+ *     /  _____/\______   \  /   _____/ ____  __ __  ____    __| _/ \_   _____/ ____    ____ |__| ____   ____  
+ *    /   \  ___ |    |  _/  \_____  \ /  _ \|  |  \/    \  / __ |   |    __)_ /    \  / ___\|  |/    \_/ __ \ 
+ *    \    \_\  \|    |   \  /        (  <_> )  |  /   |  \/ /_/ |   |        \   |  \/ /_/  >  |   |  \  ___/ 
+ *     \______  /|______  / /_______  /\____/|____/|___|  /\____ |  /_______  /___|  /\___  /|__|___|  /\___  >
+ *            \/        \/          \/                  \/      \/          \/     \//_____/         \/     \/ 
+ *      ver. 1.0
+ */
+
+// remove all magic number and replace it with macros
+
+#pragma bank 0
+
+#include <gb/gb.h>
+#include <stdio.h>
+#include "sound.h"
+#include "main.h"
+#include "wave.h"
+#include "track.h"
+
+//-------------------------------------
+
+struct ch1_reg_t ch1_reg;
+struct ch2_reg_t ch2_reg;
+struct ch3_reg_t ch3_reg;
+struct ch4_reg_t ch4_reg;
+
+struct channel_data_t ch_data[4];
+
+//-------------------------------------
+//  var
+
+uint8_t note_hi;
+uint8_t note_lo;
+
+//--------------------------------------
+
+const uint8_t freqTableLow[] = {
+  0x2C, 0x9C, 0x06, 0x6B, 0xC9, 0x23, 0x77, 0xC6, 0x12, 0x56, 0x9B, 0xDA,
+  0x16, 0x4E, 0x83, 0xB5, 0xE5, 0x11, 0x3B, 0x63, 0x89, 0xAC, 0xCE, 0xED,
+  0x0A, 0x27, 0x42, 0x5B, 0x72, 0x89, 0x9E, 0xB2, 0xC4, 0xD6, 0xE7, 0xF7,
+  0x06, 0x14, 0x21, 0x2D, 0x39, 0x44, 0x4F, 0x59, 0x62, 0x6B, 0x73, 0x7B,
+  0x83, 0x8A, 0x90, 0x97, 0x9D, 0xA2, 0xA7, 0xAC, 0xB1, 0xB6, 0xBA, 0xBE,
+  0xC1, 0xC4, 0xC8, 0xCB, 0xCE, 0xD1, 0xD4, 0xD6, 0xD9, 0xDB, 0xDD, 0xDF
+};
+
+const uint8_t freqTableHigh[] = {
+  0x00, 0x00, 0x01, 0x01, 0x01, 0x02, 0x02, 0x02, 0x03, 0x03, 0x03, 0x03,
+  0x04, 0x04, 0x04, 0x04, 0x04, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
+  0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06,
+  0x07, 0x07, 0x07, 0x07, 0x07, 0x07, 0x07, 0x07, 0x07, 0x07, 0x07, 0x07,
+  0x07, 0x07, 0x07, 0x07, 0x07, 0x07, 0x07, 0x07, 0x07, 0x07, 0x07, 0x07,
+  0x07, 0x07, 0x07, 0x07, 0x07, 0x07, 0x07, 0x07, 0x07, 0x07, 0x07, 0x07
+};
+
+const uint8_t octaveOffsets[] = { 0, 12, 24, 36, 48, 60 };
+
+const uint8_t octave_change[] = {
+    0xD3,0xF9,0x87,0xE4,
+    0x00,0x20,0x40,0x50,0x70,0x90,0xB0,
+    0xE5,
+    0x00,0x20,0x40,0x50,0x70,0x90,0xB0,
+    0xE6,0x0F,     
+    0xFF
+};
+
+const uint8_t triad_up[] = {
+    0xD3,0xF8,0x93,0xE4,
+    0x40,0x50,0x70,0x90,0xB0,
+    0xE5,
+    0x00,0x20,0x40,0x50,0x70,0x90,0xB0,
+    0xE6,
+    0x00,0x20,0x4F, 
+    0xFF
+};
+
+const uint8_t test_bass[] = {
+    0xD3,0x01,0x00,0xE3,
+    0x08,
+    0xE4,
+    0x08,
+    0xE5,
+    0x08,
+    0xFF
+};
+
+
+
+// flute DX XX 19
+
+const uint8_t empty_track[1] = {0xFF};
+
+//  ch1,    ,ch2    ,ch3    ,ch4
+
+const uint8_t* track_pointers[][4] = {
+    {loop_test, empty_track, empty_track, empty_track},
+    {empty_track, empty_track, empty_track, drum_loop},
+    {CV3_prelude_ch1, CV3_prelude_ch2, CV3_prelude_ch3, empty_track}
+};
+
+//-------------------------------------
+
+void write_wave_to_RAM(const uint8_t *wavetable) {
+    TURN_OFF_CH3;
+    for (uint8_t i = 0; i < 16; i++) AUD3WAVE[i] = wavetable[i];
+}
+
+void turnOn_sound(void) {
+    NR52_REG = 0x80;
+    NR51_REG = 0xFF;
+    NR50_REG = 0b01110111;
+
+    ch2_reg.restart = 1;
+    ch1_reg.restart = 1;
+    
+    NR32_REG = 0x00;
+}
+
+void turnOFF_sound(void) {
+    NR52_REG = 0x00;
+}
+
+//--------------------------------------
+//Process Byte
+
+void play_note(uint8_t channel) {
+    if (note_hi > 0xD) return;
+
+    (ch_data + channel)->tick_counter = ((ch_data + channel)->ticks_per_row * note_lo) - 1;
+
+    if (note_hi == 0x0C) {                  // Pauza
+        if (channel == 2) NR30_REG = 0x00;  // Wyłącz Wave na pauzie
+        else stop_channel(channel);
+        return;
+    }
+
+    if (channel == 3) {
+        switch (note_hi) {
+            case 0x0: // BD - Kick Drum
+                NR42_REG = 0xA1; 
+                NR43_REG = 0x50; 
+                break;
+            case 0x1: // SD - Snare
+                NR42_REG = 0x92; 
+                NR43_REG = 0x80; 
+                break;
+            case 0x2: // CH - Closed Hi-Hat
+                NR42_REG = 0x51; 
+                NR43_REG = 0x11; 
+                break;
+        }
+        NR44_REG = 0x80;
+        return;
+    }
+
+    uint8_t index = note_hi + octaveOffsets[(ch_data + channel)->curr_octv - 2];
+
+    uint8_t low = freqTableLow[index];
+    uint8_t high = freqTableHigh[index];
+
+    if (channel == 0){
+        UPDATE_NR11;
+        NR13_REG = low;
+        UPDATE_NR12;
+        NR14_REG = 0x80 | high;
+    }
+    if (channel == 1){
+        UPDATE_NR21;
+        NR23_REG = low;
+        UPDATE_NR22;
+        NR24_REG = 0x80 | high;
+    }
+    if (channel == 2){
+        TURN_ON_CH3;
+        UPDATE_NR31;
+        UPDATE_NR32;
+        NR33_REG = low;
+        NR34_REG = 0x80 | high;
+    }
+}
+
+void process_intrument(uint8_t channel) {
+    if (channel == 3) return;
+    uint8_t event = *(ch_data + channel)->ptr++;
+
+    if (channel == 0 || channel == 1) {
+
+        note_hi = event & 0x03;                 //  LLLL LLDD
+        note_lo = event >> 2;                   //  L - Lenght, D - Duty
+
+        if (channel == 0) {
+            ch1_reg.patternDuty = note_hi;
+            ch1_reg.soundLength = note_lo;
+        }
+
+        if (channel == 1) {
+            ch2_reg.patternDuty = note_hi;
+            ch2_reg.soundLength = note_lo;
+        }
+
+        event = *(ch_data + channel)->ptr++;
+    
+        uint8_t envM = (event >> 3) & 0x01;     // VVVV ---- (Initial Volume, 0-15)
+        uint8_t envV = event >> 4;              // ---- M--- (0 = down, 1 = up)
+        uint8_t envS = event & 0x07;            // ---- -SSS (Number of envelope steps, 0-7)
+
+        if (channel == 0) {
+            ch1_reg.envInitialValue = envV;
+            ch1_reg.envMode = envM;
+            ch1_reg.envNbSweep = envS;
+        }
+        if (channel == 1) {
+            ch2_reg.envInitialValue = envV;
+            ch2_reg.envMode = envM;
+            ch2_reg.envNbSweep = envS;
+        }
+        return;
+    }
+
+    if (channel == 2) {
+        ch3_reg.selOutputLevel = event;
+        const uint8_t *wave_pointer = NULL;
+
+        switch(event & WAVE_COUNT) {
+            case 0x00: wave_pointer = square_wave;   break;
+            case 0x01: wave_pointer = triangle_wave; break;
+            case 0x02: wave_pointer = epiano_wave;   break;
+            case 0x03: wave_pointer = metallic_wave; break;
+        }
+        write_wave_to_RAM(wave_pointer);
+    }
+}
+
+void play_event(uint8_t channel) {
+    while (1) {
+        uint8_t event = *(ch_data + channel)->ptr++;
+        if (event == STOP) return;
+
+        note_hi = GET_HIGH_NIBBLE(event);
+        note_lo = GET_LOW_NIBBLE(event);
+
+        if (note_hi < 0x0D) {
+            note_lo++;
+            play_note(channel);
+            return;
+        }
+
+        if (note_hi == SPECIAL) {
+
+            if (note_lo == OPEN_LOOP) {
+                note_lo = *(ch_data + channel)->ptr++;
+                note_hi = *(ch_data + channel)->ptr++;
+        
+                uint8_t repeats = *(ch_data + channel)->ptr++; 
+
+                if (repeats == 0xFF) {
+                    (ch_data + channel)->loop_iterator = 0;
+                    uint16_t dest = (uint16_t)note_lo | ((uint16_t)note_hi << 8);
+                    (ch_data + channel)->ptr = (uint8_t *)dest;
+                    continue;
+                }
+
+                if ((ch_data + channel)->loop_iterator < repeats - 1){
+                    (ch_data + channel)->loop_iterator++;
+
+                    uint16_t dest = (uint16_t)note_lo | ((uint16_t)note_hi << 8);
+                    (ch_data + channel)->ptr = (uint8_t *)dest;
+
+                } else {
+                    (ch_data + channel)->loop_iterator = 0;
+                }
+                continue;
+            }
+
+        } else if (note_hi == OCTAVE) {
+            
+            if (note_lo < 2 || note_lo > 7) continue;
+
+            (ch_data + channel)->curr_octv = note_lo;
+            continue;
+
+        } else if (note_hi == TEMPO) {   
+            (ch_data + channel)->ticks_per_row = note_lo;
+            process_intrument(channel);
+        }
+    }
+}
+
+//--------------------------------------
+
+void init_track(uint8_t track_id) {
+    //make sure that every channel is silent
+    NR12_REG = 0x00; // Vol 0
+    NR22_REG = 0x00; // Vol 0
+    NR30_REG = 0x00; // Wave OFF
+    NR42_REG = 0x00; // Noise Vol 0
+    
+    NR14_REG = 0x00;
+    NR24_REG = 0x00;
+    NR44_REG = 0x00;
+
+    //set default data
+    for(unsigned char i = 0; i < 4; i++){
+        (ch_data + i)->ticks_per_row = 7;
+        (ch_data + i)->tick_counter = 0;
+        (ch_data + i)->curr_octv = 3;
+        (ch_data + i)->loop_iterator = 0;
+    }
+
+    if (track_id > 2) track_id = 0;
+
+    //set pointers to track
+    uint8_t **ptr = track_pointers[track_id]; 
+
+    ch_data[0].ptr = ptr[0];
+    ch_data[1].ptr = ptr[1];
+    ch_data[2].ptr = ptr[2];
+    ch_data[3].ptr = ptr[3];
+}
+
+void stop_channel(uint8_t channel) {
+    switch (channel) {
+        case 0: NR12_REG = 0x00; NR14_REG = 0x80; break; 
+        case 1: NR22_REG = 0x00; NR24_REG = 0x80; break; 
+        case 2: NR30_REG = 0x00; break;                 
+        case 3: NR42_REG = 0x00; NR44_REG = 0x80; break; 
+    }
+}
+
+void channel_update(uint8_t channel) {
+    if ((ch_data + channel)->tick_counter > 0) {
+        (ch_data + channel)->tick_counter--;
+
+        // Special commands handler 
+
+        return;
+    }
+
+    if (*(ch_data + channel)->ptr == STOP) {
+        stop_channel(channel);
+        return;
+    }
+
+    (ch_data + channel)->tick_counter--;
+
+    play_event(channel);
+}
+
+void update_song(void) {
+    channel_update(0);
+    channel_update(1);
+    channel_update(2);
+    channel_update(3);
+}
+
+void stop_track(void) {
+    NR12_REG = 0x00; 
+    NR14_REG = 0x80; 
+
+    NR22_REG = 0x00; 
+    NR24_REG = 0x80; 
+
+    NR30_REG = 0x00; 
+
+    NR42_REG = 0x00; 
+    NR44_REG = 0x80; 
+    
+    for (int i = 0; i < 4; i++) ch_data[i].ptr = NULL;
+}
