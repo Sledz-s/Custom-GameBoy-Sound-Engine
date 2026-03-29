@@ -19,7 +19,7 @@
         Sound engine can handle up to 256 different tracks
         to add your own track you can do it in two ways
 
-        you can create a array of data          (not recommended)
+        you can create an array of data          (not recommended)
         or you can create an asm file with the data  (recommended)
 
         to import a table from asm you have to extern table for asm, for example:
