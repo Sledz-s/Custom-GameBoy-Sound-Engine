@@ -10,10 +10,8 @@
  *    \    \_\  \|    |   \  /        (  <_> )  |  /   |  \/ /_/ |   |        \   |  \/ /_/  >  |   |  \  ___/ 
  *     \______  /|______  / /_______  /\____/|____/|___|  /\____ |  /_______  /___|  /\___  /|__|___|  /\___  >
  *            \/        \/          \/                  \/      \/          \/     \//_____/         \/     \/ 
- *      ver. 1.0
+ *      ver. 1.1
  */
-
-// remove all magic number and replace it with macros
 
 #pragma bank 0
 
@@ -61,40 +59,7 @@ const uint8_t freqTableHigh[] = {
 
 const uint8_t octaveOffsets[] = { 0, 12, 24, 36, 48, 60 };
 
-const uint8_t octave_change[] = {
-    0xD3,0xF9,0x87,0xE4,
-    0x00,0x20,0x40,0x50,0x70,0x90,0xB0,
-    0xE5,
-    0x00,0x20,0x40,0x50,0x70,0x90,0xB0,
-    0xE6,0x0F,     
-    0xFF
-};
 
-const uint8_t triad_up[] = {
-    0xD3,0xF8,0x93,0xE4,
-    0x40,0x50,0x70,0x90,0xB0,
-    0xE5,
-    0x00,0x20,0x40,0x50,0x70,0x90,0xB0,
-    0xE6,
-    0x00,0x20,0x4F, 
-    0xFF
-};
-
-const uint8_t test_bass[] = {
-    0xD3,0x01,0x00,0xE3,
-    0x08,
-    0xE4,
-    0x08,
-    0xE5,
-    0x08,
-    0xFF
-};
-
-
-
-// flute DX XX 19
-
-const uint8_t empty_track[1] = {0xFF};
 
 //  ch1,    ,ch2    ,ch3    ,ch4
 
@@ -112,30 +77,31 @@ void write_wave_to_RAM(const uint8_t *wavetable) {
 }
 
 void turnOn_sound(void) {
-    NR52_REG = 0x80;
-    NR51_REG = 0xFF;
-    NR50_REG = 0b01110111;
+    NR52_REG = AUDIO_ON;
+    NR51_REG = AUDIO_PAN_ALL;
+    NR50_REG = AUDIO_VOL_MAX;
 
-    ch2_reg.restart = 1;
-    ch1_reg.restart = 1;
+    ch3_reg.restart = CH_RESTART;
+    ch2_reg.restart = CH_RESTART;
+    ch1_reg.restart = CH_RESTART;
     
     NR32_REG = 0x00;
 }
 
 void turnOFF_sound(void) {
-    NR52_REG = 0x00;
+    NR52_REG = AUDIO_OFF;
 }
 
 //--------------------------------------
 //Process Byte
 
 void play_note(uint8_t channel) {
-    if (note_hi > 0xD) return;
+    if (note_hi > NOTE_MAX) return;
 
     (ch_data + channel)->tick_counter = ((ch_data + channel)->ticks_per_row * note_lo) - 1;
 
-    if (note_hi == 0x0C) {                  // Pauza
-        if (channel == 2) NR30_REG = 0x00;  // Wyłącz Wave na pauzie
+    if (note_hi == NOTE_PAUSE) {            // Pause
+        if (channel == 2) TURN_OFF_CH3;     // turn off ch3 during pause
         else stop_channel(channel);
         return;
     }
@@ -143,19 +109,19 @@ void play_note(uint8_t channel) {
     if (channel == 3) {
         switch (note_hi) {
             case 0x0: // BD - Kick Drum
-                NR42_REG = 0xA1; 
-                NR43_REG = 0x50; 
+                NR42_REG = DRUM_BD_ENV; 
+                NR43_REG = DRUM_BD_FREQ;
                 break;
             case 0x1: // SD - Snare
-                NR42_REG = 0x92; 
-                NR43_REG = 0x80; 
+                NR42_REG = DRUM_SD_ENV; 
+                NR43_REG = DRUM_SD_FREQ;
                 break;
             case 0x2: // CH - Closed Hi-Hat
-                NR42_REG = 0x51; 
-                NR43_REG = 0x11; 
+                NR42_REG = DRUM_CH_ENV; 
+                NR43_REG = DRUM_CH_FREQ;
                 break;
         }
-        NR44_REG = 0x80;
+        CH4_RESTART;
         return;
     }
 
@@ -165,23 +131,13 @@ void play_note(uint8_t channel) {
     uint8_t high = freqTableHigh[index];
 
     if (channel == 0){
-        UPDATE_NR11;
-        NR13_REG = low;
-        UPDATE_NR12;
-        NR14_REG = 0x80 | high;
+        update_channel1(low, high);
     }
     if (channel == 1){
-        UPDATE_NR21;
-        NR23_REG = low;
-        UPDATE_NR22;
-        NR24_REG = 0x80 | high;
+        update_channel2(low, high);
     }
     if (channel == 2){
-        TURN_ON_CH3;
-        UPDATE_NR31;
-        UPDATE_NR32;
-        NR33_REG = low;
-        NR34_REG = 0x80 | high;
+        update_channel3(low, high);
     }
 }
 
@@ -245,7 +201,7 @@ void play_event(uint8_t channel) {
         note_hi = GET_HIGH_NIBBLE(event);
         note_lo = GET_LOW_NIBBLE(event);
 
-        if (note_hi < 0x0D) {
+        if (note_hi < TEMPO) {
             note_lo++;
             play_note(channel);
             return;
@@ -296,14 +252,14 @@ void play_event(uint8_t channel) {
 
 void init_track(uint8_t track_id) {
     //make sure that every channel is silent
-    NR12_REG = 0x00; // Vol 0
-    NR22_REG = 0x00; // Vol 0
-    NR30_REG = 0x00; // Wave OFF
-    NR42_REG = 0x00; // Noise Vol 0
+    NR12_REG = MUTE; 
+    NR22_REG = MUTE; 
+    TURN_OFF_CH3;
+    NR42_REG = MUTE; 
     
-    NR14_REG = 0x00;
-    NR24_REG = 0x00;
-    NR44_REG = 0x00;
+    NR14_REG = CH_OFF;
+    NR24_REG = CH_OFF;
+    NR44_REG = CH_OFF;
 
     //set default data
     for(unsigned char i = 0; i < 4; i++){
@@ -326,10 +282,10 @@ void init_track(uint8_t track_id) {
 
 void stop_channel(uint8_t channel) {
     switch (channel) {
-        case 0: NR12_REG = 0x00; NR14_REG = 0x80; break; 
-        case 1: NR22_REG = 0x00; NR24_REG = 0x80; break; 
-        case 2: NR30_REG = 0x00; break;                 
-        case 3: NR42_REG = 0x00; NR44_REG = 0x80; break; 
+        case 0: NR12_REG = 0x00; NR14_REG = CH_RESTART; break; 
+        case 1: NR22_REG = 0x00; NR24_REG = CH_RESTART; break; 
+        case 2: TURN_OFF_CH3; break;                 
+        case 3: NR42_REG = 0x00; NR44_REG = CH_RESTART; break;
     }
 }
 
@@ -338,6 +294,7 @@ void channel_update(uint8_t channel) {
         (ch_data + channel)->tick_counter--;
 
         // Special commands handler 
+        // will add soon
 
         return;
     }
@@ -360,16 +317,16 @@ void update_song(void) {
 }
 
 void stop_track(void) {
-    NR12_REG = 0x00; 
-    NR14_REG = 0x80; 
+    NR12_REG = MUTE; 
+    NR14_REG = CH_RESTART; 
 
-    NR22_REG = 0x00; 
-    NR24_REG = 0x80; 
+    NR22_REG = MUTE; 
+    NR24_REG = CH_RESTART; 
 
-    NR30_REG = 0x00; 
+    TURN_OFF_CH3;
 
-    NR42_REG = 0x00; 
-    NR44_REG = 0x80; 
+    NR42_REG = MUTE; 
+    NR44_REG = CH_RESTART; 
     
-    for (int i = 0; i < 4; i++) ch_data[i].ptr = NULL;
+    for (uint8_t i = 0; i < 4; i++) ch_data[i].ptr = NULL;
 }
