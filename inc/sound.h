@@ -2,7 +2,6 @@
 #define SOUND_H
 
 #include <gb/gb.h>
-#include <stdint.h>
 
 #include "wave.h"
 
@@ -55,46 +54,33 @@
 #define GET_LOW_NIBBLE(b)  ((b) & 0x0F)
 #define GET_HIGH_NIBBLE(b) ((b) >> 4)
 
-#define WAVE_COUNT     0x03
-
 //-------------------------------------
-//  channel 1 macros
 
-#define UPDATE_NR10	(NR10_REG = ch1_reg.sweepShifts | (ch1_reg.sweepMode << 3) | (ch1_reg.sweepTime << 4))
-#define UPDATE_NR11	(NR11_REG = ch1_reg.soundLength | (ch1_reg.patternDuty << 6))
-#define UPDATE_NR12	(NR12_REG = ch1_reg.envNbSweep | (ch1_reg.envMode << 3) | (ch1_reg.envInitialValue << 4))
-#define UPDATE_NR13	(NR13_REG = ch1_reg.frequencyLow)
-#define UPDATE_NR14	(NR14_REG = ch1_reg.frequencyHigh | (ch1_reg.counter_ConsSel << 6) | (ch1_reg.restart << 7))
+#define CH_RESTART      0x80  // Bit 7: Trigger/Restart
+#define CH_LOOP_OFF     0x40  // Bit 6: Counter/Consecutive selection
+#define CH_ON           0x80  // Bit 7: Sound On (for NR30/NR52)
+#define CH_OFF          0x00
 
-//-------------------------------------
-//  channel 2 macros
+#define ENV_UP          0x08  // Bit 3: 1 = Increase
+#define ENV_DOWN        0x00
 
+#define AUDIO_ON        0x80
+#define AUDIO_OFF       0x00
 
-#define UPDATE_NR21	(NR21_REG = ch2_reg.soundLength | (ch2_reg.patternDuty << 6))
-#define UPDATE_NR22	(NR22_REG = ch2_reg.envNbSweep | (ch2_reg.envMode << 3) | (ch2_reg.envInitialValue << 4))
-#define UPDATE_NR23	(NR23_REG = ch2_reg.frequencyLow)
-#define UPDATE_NR24	(NR24_REG = ch2_reg.frequencyHigh | (ch2_reg.counter_ConsSel << 6) | (ch2_reg.restart << 7))
+#define MUTE            0x00
 
-//-------------------------------------
-//  channel 3 macros
+#define AUDIO_PAN_ALL   0xFF
+#define AUDIO_VOL_MAX   0x77
 
-#define UPDATE_NR30 (NR30_REG = ch3_reg.on_Off << 7)
-#define UPDATE_NR31	(NR31_REG = ch3_reg.soundLength)
-#define UPDATE_NR32	(NR32_REG = ch3_reg.selOutputLevel)
-#define UPDATE_NR33	(NR33_REG = ch3_reg.frequencyLow)
-#define UPDATE_NR34	(NR34_REG = ch3_reg.frequencyHigh | (ch3_reg.counter_ConsSel << 6) | (ch3_reg.restart << 7))
+#define NOTE_PAUSE      0x0C
+#define NOTE_MAX        0x0D
 
-#define TURN_OFF_CH3    NR30_REG = 0
-#define TURN_ON_CH3     NR30_REG = 0x80
-
-
-//-------------------------------------
-//  channel 4 macros
-
-#define UPDATE_NR41 (NR41_REG = ch4_reg.soundLength)
-#define UPDATE_NR42 (NR42_REG = ch4_reg.envNbStep | (ch4_reg.envMode << 3) | (ch4_reg.envInitialValue << 4))
-#define UPDATE_NR43 (NR43_REG = ch4_reg.polyCounterDiv | (ch4_reg.polyCounterStep << 3) | (ch4_reg.polyCounterFreq << 4))
-#define UPDATE_NR44 (NR44_REG = (ch4_reg.counter_ConsSel << 6) | (ch4_reg.restart << 7))
+#define DRUM_BD_ENV     0xA1
+#define DRUM_BD_FREQ    0x50
+#define DRUM_SD_ENV     0x92
+#define DRUM_SD_FREQ    0x80
+#define DRUM_CH_ENV     0x51
+#define DRUM_CH_FREQ    0x11
 
 //-------------------------------------
 // channel structs
@@ -162,6 +148,71 @@ struct channel_data_t {
     uint8_t ticks_per_row;
     uint8_t loop_iterator;
 };
+
+//-------------------------------------
+
+extern struct ch1_reg_t ch1_reg;
+extern struct ch2_reg_t ch2_reg;
+extern struct ch3_reg_t ch3_reg;
+extern struct ch4_reg_t ch4_reg;
+
+//-------------------------------------
+//  channel 1 macros
+
+#define UPDATE_NR11	(NR11_REG = ch1_reg.soundLength | (ch1_reg.patternDuty << 6))
+#define UPDATE_NR12	(NR12_REG = ch1_reg.envNbSweep | (ch1_reg.envMode << 3) | (ch1_reg.envInitialValue << 4))
+
+inline void update_channel1(uint8_t freqLow, uint8_t freqHigh) {
+    UPDATE_NR11;
+    NR13_REG = freqLow;
+    UPDATE_NR12;
+    NR14_REG = ch1_reg.restart | freqHigh;
+}
+
+//-------------------------------------
+//  channel 2 macros
+
+
+#define UPDATE_NR21	(NR21_REG = ch2_reg.soundLength | (ch2_reg.patternDuty << 6))
+#define UPDATE_NR22	(NR22_REG = ch2_reg.envNbSweep | (ch2_reg.envMode << 3) | (ch2_reg.envInitialValue << 4))
+
+inline void update_channel2(uint8_t freqLow, uint8_t freqHigh) {
+    UPDATE_NR21;
+    NR23_REG = freqLow;
+    UPDATE_NR22;
+    NR24_REG = ch2_reg.restart | freqHigh;
+}
+
+//-------------------------------------
+//  channel 3 macros
+
+#define UPDATE_NR30 (NR30_REG = ch3_reg.on_Off << 7)
+#define UPDATE_NR31	(NR31_REG = ch3_reg.soundLength)
+#define UPDATE_NR32	(NR32_REG = ch3_reg.selOutputLevel)
+
+#define TURN_OFF_CH3    NR30_REG = 0
+#define TURN_ON_CH3     NR30_REG = 0x80
+
+#define WAVE_COUNT     0x03
+
+inline void update_channel3(uint8_t freqLow, uint8_t freqHigh) {
+    TURN_ON_CH3;
+    UPDATE_NR31;
+    UPDATE_NR32;
+    NR33_REG = freqLow;
+    NR34_REG = ch3_reg.restart | freqHigh;
+}
+
+
+//-------------------------------------
+//  channel 4 macros
+
+#define UPDATE_NR41 (NR41_REG = ch4_reg.soundLength)
+#define UPDATE_NR42 (NR42_REG = ch4_reg.envNbStep | (ch4_reg.envMode << 3) | (ch4_reg.envInitialValue << 4))
+#define UPDATE_NR43 (NR43_REG = ch4_reg.polyCounterDiv | (ch4_reg.polyCounterStep << 3) | (ch4_reg.polyCounterFreq << 4))
+#define UPDATE_NR44 (NR44_REG = (ch4_reg.counter_ConsSel << 6) | (ch4_reg.restart << 7))
+
+#define CH4_RESTART NR44_REG = 0x80
 
 //-------------------------------------
 
