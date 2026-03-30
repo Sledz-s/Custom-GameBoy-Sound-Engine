@@ -11,6 +11,8 @@
  *     \______  /|______  / /_______  /\____/|____/|___|  /\____ |  /_______  /___|  /\___  /|__|___|  /\___  >
  *            \/        \/          \/                  \/      \/          \/     \//_____/         \/     \/ 
  *      ver. 1.1
+ *      What's new:
+ *        optimize write_wave_to_RAM, init_track
  */
 
 #pragma bank 0
@@ -36,6 +38,7 @@ struct channel_data_t ch_data[4];
 
 uint8_t note_hi;
 uint8_t note_lo;
+uint8_t channel;
 
 //--------------------------------------
 
@@ -73,7 +76,21 @@ const uint8_t* track_pointers[][4] = {
 
 void write_wave_to_RAM(const uint8_t *wavetable) {
     TURN_OFF_CH3;
-    for (uint8_t i = 0; i < 16; i++) AUD3WAVE[i] = wavetable[i];
+
+    //pointer to the start of wave ram
+    uint8_t *wave_ram = (uint8_t *)0xFF30; 
+
+    // for (uint8_t i = 16; i != 0; i--) AUD3WAVE[i] = wavetable[i];
+    // unrolled loop 
+    *wave_ram++ = *wavetable++; *wave_ram++ = *wavetable++;
+    *wave_ram++ = *wavetable++; *wave_ram++ = *wavetable++;
+    *wave_ram++ = *wavetable++; *wave_ram++ = *wavetable++;
+    *wave_ram++ = *wavetable++; *wave_ram++ = *wavetable++;
+
+    *wave_ram++ = *wavetable++; *wave_ram++ = *wavetable++;
+    *wave_ram++ = *wavetable++; *wave_ram++ = *wavetable++;
+    *wave_ram++ = *wavetable++; *wave_ram++ = *wavetable++;
+    *wave_ram++ = *wavetable++; *wave_ram = *wavetable;
 }
 
 void turnOn_sound(void) {
@@ -95,14 +112,14 @@ void turnOFF_sound(void) {
 //--------------------------------------
 //Process Byte
 
-void play_note(uint8_t channel) {
+void play_note(void) {
     if (note_hi > NOTE_MAX) return;
 
     (ch_data + channel)->tick_counter = ((ch_data + channel)->ticks_per_row * note_lo) - 1;
 
     if (note_hi == NOTE_PAUSE) {            // Pause
         if (channel == 2) TURN_OFF_CH3;     // turn off ch3 during pause
-        else stop_channel(channel);
+        else stop_channel();
         return;
     }
 
@@ -141,7 +158,7 @@ void play_note(uint8_t channel) {
     }
 }
 
-void process_intrument(uint8_t channel) {
+void process_intrument(void) {
     if (channel == 3) return;
     uint8_t event = *(ch_data + channel)->ptr++;
 
@@ -193,7 +210,7 @@ void process_intrument(uint8_t channel) {
     }
 }
 
-void play_event(uint8_t channel) {
+void play_event(void) {
     while (1) {
         uint8_t event = *(ch_data + channel)->ptr++;
         if (event == STOP) return;
@@ -203,36 +220,12 @@ void play_event(uint8_t channel) {
 
         if (note_hi < TEMPO) {
             note_lo++;
-            play_note(channel);
+            play_note();
             return;
         }
 
         if (note_hi == SPECIAL) {
-
-            if (note_lo == OPEN_LOOP) {
-                note_lo = *(ch_data + channel)->ptr++;
-                note_hi = *(ch_data + channel)->ptr++;
-        
-                uint8_t repeats = *(ch_data + channel)->ptr++; 
-
-                if (repeats == 0xFF) {
-                    (ch_data + channel)->loop_iterator = 0;
-                    uint16_t dest = (uint16_t)note_lo | ((uint16_t)note_hi << 8);
-                    (ch_data + channel)->ptr = (uint8_t *)dest;
-                    continue;
-                }
-
-                if ((ch_data + channel)->loop_iterator < repeats - 1){
-                    (ch_data + channel)->loop_iterator++;
-
-                    uint16_t dest = (uint16_t)note_lo | ((uint16_t)note_hi << 8);
-                    (ch_data + channel)->ptr = (uint8_t *)dest;
-
-                } else {
-                    (ch_data + channel)->loop_iterator = 0;
-                }
-                continue;
-            }
+            simple_sfx_handler();
 
         } else if (note_hi == OCTAVE) {
             
@@ -243,8 +236,41 @@ void play_event(uint8_t channel) {
 
         } else if (note_hi == TEMPO) {   
             (ch_data + channel)->ticks_per_row = note_lo;
-            process_intrument(channel);
+            process_intrument();
         }
+    }
+}
+
+void simple_sfx_handler(void) {
+    struct channel_data_t *curr_ch = &ch_data[channel];
+
+    switch (note_lo) {
+    case CH_PAN:
+
+    note_lo = *curr_ch->ptr++;
+    NR51_REG = note_lo;
+
+    return;
+    case OPEN_LOOP: // Looping Logic
+        note_lo = *curr_ch->ptr++;
+        note_hi = *curr_ch->ptr++;
+        
+        uint8_t repeats = *curr_ch->ptr++; 
+
+        if (repeats == 0xFF) {
+            uint16_t dest = (uint16_t)note_lo | ((uint16_t)note_hi << 8);
+            curr_ch->ptr = (uint8_t *)dest;
+            return;
+        }
+
+        if (curr_ch->loop_iterator < repeats - 1) {
+            curr_ch->loop_iterator++;
+            uint16_t dest = (uint16_t)note_lo | ((uint16_t)note_hi << 8);
+            curr_ch->ptr = (uint8_t *)dest;
+        } else {
+            curr_ch->loop_iterator = 0;
+        }
+        return;
     }
 }
 
@@ -261,26 +287,27 @@ void init_track(uint8_t track_id) {
     NR24_REG = CH_OFF;
     NR44_REG = CH_OFF;
 
-    //set default data
-    for(unsigned char i = 0; i < 4; i++){
-        (ch_data + i)->ticks_per_row = 7;
-        (ch_data + i)->tick_counter = 0;
-        (ch_data + i)->curr_octv = 3;
-        (ch_data + i)->loop_iterator = 0;
+    if (track_id > 2) track_id = 0; //sound test check
+    //--------------------------------------
+    //set data
+    uint8_t *raw_p = (uint8_t *)ch_data;    // set pointer to the first element of ch_data array
+    const uint8_t **curr_ptr_track = track_pointers[track_id]; //set pointers to track
+
+    for (uint8_t i = 4; i != 0; i--) {
+        uint16_t track_addr = (uint16_t)*curr_ptr_track++;
+
+        *raw_p++ = (uint8_t)(track_addr & 0xFF); // Low byte
+        *raw_p++ = (uint8_t)(track_addr >> 8);   // High byte
+
+        *raw_p++ = 3;    // Set curr_octv
+        *raw_p++ = 0;    // Set tick_counter
+        *raw_p++ = 7;    // Set ticks_per_row
+        *raw_p++ = 0;    // Set loop_iterator
+        raw_p += 2;      // Skip padding to get to next struct
     }
-
-    if (track_id > 2) track_id = 0;
-
-    //set pointers to track
-    uint8_t **ptr = track_pointers[track_id]; 
-
-    ch_data[0].ptr = ptr[0];
-    ch_data[1].ptr = ptr[1];
-    ch_data[2].ptr = ptr[2];
-    ch_data[3].ptr = ptr[3];
 }
 
-void stop_channel(uint8_t channel) {
+void stop_channel(void) {
     switch (channel) {
         case 0: NR12_REG = 0x00; NR14_REG = CH_RESTART; break; 
         case 1: NR22_REG = 0x00; NR24_REG = CH_RESTART; break; 
@@ -289,9 +316,11 @@ void stop_channel(uint8_t channel) {
     }
 }
 
-void channel_update(uint8_t channel) {
-    if ((ch_data + channel)->tick_counter > 0) {
-        (ch_data + channel)->tick_counter--;
+void channel_update(void) {
+    struct channel_data_t *curr_ch = &ch_data[channel];
+
+    if (curr_ch->tick_counter > 0) {
+        curr_ch->tick_counter--;
 
         // Special commands handler 
         // will add soon
@@ -299,21 +328,25 @@ void channel_update(uint8_t channel) {
         return;
     }
 
-    if (*(ch_data + channel)->ptr == STOP) {
-        stop_channel(channel);
+    if (*curr_ch->ptr == STOP) {
+        stop_channel();
         return;
     }
 
-    (ch_data + channel)->tick_counter--;
+    curr_ch->tick_counter--;
 
-    play_event(channel);
+    play_event();
 }
 
 void update_song(void) {
-    channel_update(0);
-    channel_update(1);
-    channel_update(2);
-    channel_update(3);
+    channel = 0;
+    channel_update();   //ch 1 update
+    channel++;
+    channel_update();   //ch 2 update
+    channel++;
+    channel_update();   //ch 3 update
+    channel++;
+    channel_update();   //ch 4 update
 }
 
 void stop_track(void) {
@@ -327,6 +360,6 @@ void stop_track(void) {
 
     NR42_REG = MUTE; 
     NR44_REG = CH_RESTART; 
-    
-    for (uint8_t i = 0; i < 4; i++) ch_data[i].ptr = NULL;
+
+    for (uint8_t i = 4; i != 0; i--) ch_data[i].ptr = NULL;
 }
