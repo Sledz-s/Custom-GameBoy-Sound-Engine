@@ -106,7 +106,7 @@
 		0xFE -> Loop open
 		0xF0 -> Change panning
 
-		0xFE Loop syntax:
+		## 0xFE Loop syntax:
 			0xFE, address_lo, address_hi, how many times
 
 		I recomnd using ASM for making tracks with loops
@@ -123,7 +123,7 @@
 			    .db STOP
 		if you want infinite loop simply use 0xFF for how many times
 
-		0xF0 Change panning syntax:
+		## 0xF0 Change panning syntax:
 			0xF0, bit mask
 		    8      7      6      5      4      3      2      1
 		| CH4L | CH4R | CH3L | CH3R | CH2L | CH2R | CH1L | CH1R |
