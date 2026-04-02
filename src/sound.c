@@ -10,9 +10,15 @@
  *    \    \_\  \|    |   \  /        (  <_> )  |  /   |  \/ /_/ |   |        \   |  \/ /_/  >  |   |  \  ___/ 
  *     \______  /|______  / /_______  /\____/|____/|___|  /\____ |  /_______  /___|  /\___  /|__|___|  /\___  >
  *            \/        \/          \/                  \/      \/          \/     \//_____/         \/     \/ 
- *      ver. 1.1
+ *      ver. 1.2
+ *  
  *      What's new:
- *        optimize write_wave_to_RAM, init_track
+ *        ver: 1.2
+ *          Added special check in update_song to prevent CPU usage     
+ *          Added new command 0xF0, panning change, see README for more information          
+ *
+ *        ver: 1.1
+ *          optimize write_wave_to_RAM, init_track
  */
 
 #pragma bank 0
@@ -39,6 +45,8 @@ struct channel_data_t ch_data[4];
 uint8_t note_hi;
 uint8_t note_lo;
 uint8_t channel;
+
+uint8_t sound_engine_state = 0;
 
 //--------------------------------------
 
@@ -114,8 +122,9 @@ void turnOFF_sound(void) {
 
 void play_note(void) {
     if (note_hi > NOTE_MAX) return;
+    struct channel_data_t *curr_ch = &ch_data[channel];
 
-    (ch_data + channel)->tick_counter = ((ch_data + channel)->ticks_per_row * note_lo) - 1;
+    curr_ch->tick_counter = (curr_ch->ticks_per_row * note_lo) - 1;
 
     if (note_hi == NOTE_PAUSE) {            // Pause
         if (channel == 2) TURN_OFF_CH3;     // turn off ch3 during pause
@@ -142,7 +151,7 @@ void play_note(void) {
         return;
     }
 
-    uint8_t index = note_hi + octaveOffsets[(ch_data + channel)->curr_octv - 2];
+    uint8_t index = note_hi + octaveOffsets[curr_ch->curr_octv - 2];
 
     uint8_t low = freqTableLow[index];
     uint8_t high = freqTableHigh[index];
@@ -160,7 +169,10 @@ void play_note(void) {
 
 void process_intrument(void) {
     if (channel == 3) return;
-    uint8_t event = *(ch_data + channel)->ptr++;
+
+    struct channel_data_t *curr_ch = &ch_data[channel];
+
+    uint8_t event = *curr_ch->ptr++;
 
     if (channel == 0 || channel == 1) {
 
@@ -211,8 +223,9 @@ void process_intrument(void) {
 }
 
 void play_event(void) {
+    struct channel_data_t *curr_ch = &ch_data[channel];
     while (1) {
-        uint8_t event = *(ch_data + channel)->ptr++;
+        uint8_t event = *curr_ch->ptr++;
         if (event == STOP) return;
 
         note_hi = GET_HIGH_NIBBLE(event);
@@ -231,11 +244,11 @@ void play_event(void) {
             
             if (note_lo < 2 || note_lo > 7) continue;
 
-            (ch_data + channel)->curr_octv = note_lo;
+            curr_ch->curr_octv = note_lo;
             continue;
 
         } else if (note_hi == TEMPO) {   
-            (ch_data + channel)->ticks_per_row = note_lo;
+            curr_ch->ticks_per_row = note_lo;
             process_intrument();
         }
     }
@@ -246,9 +259,8 @@ void simple_sfx_handler(void) {
 
     switch (note_lo) {
     case CH_PAN:
-
-    note_lo = *curr_ch->ptr++;
-    NR51_REG = note_lo;
+      note_lo = *curr_ch->ptr++;
+      NR51_REG = note_lo;
 
     return;
     case OPEN_LOOP: // Looping Logic
@@ -277,6 +289,7 @@ void simple_sfx_handler(void) {
 //--------------------------------------
 
 void init_track(uint8_t track_id) {
+    sound_engine_state = 1;
     //make sure that every channel is silent
     NR12_REG = MUTE; 
     NR22_REG = MUTE; 
@@ -339,6 +352,7 @@ void channel_update(void) {
 }
 
 void update_song(void) {
+    if (!sound_engine_state) return;
     channel = 0;
     channel_update();   //ch 1 update
     channel++;
@@ -350,6 +364,7 @@ void update_song(void) {
 }
 
 void stop_track(void) {
+    sound_engine_state = 0;
     NR12_REG = MUTE; 
     NR14_REG = CH_RESTART; 
 
@@ -361,5 +376,5 @@ void stop_track(void) {
     NR42_REG = MUTE; 
     NR44_REG = CH_RESTART; 
 
-    for (uint8_t i = 4; i != 0; i--) ch_data[i].ptr = NULL;
+    for (uint8_t i = 0; i < 4 ; i++) ch_data[i].ptr = NULL;
 }
