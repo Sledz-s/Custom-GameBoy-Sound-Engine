@@ -16,4 +16,8 @@ extern const uint8_t empty_track[1];
 extern const uint8_t loop_test[];
 extern const uint8_t drum_loop[];
 
+extern const uint8_t BWV847_ch1[];
+extern const uint8_t BWV847_ch2[];
+extern const uint8_t BWV847_ch3[];
+
 #endif
