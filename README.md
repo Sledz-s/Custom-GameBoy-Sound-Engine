@@ -103,11 +103,11 @@
 	## 4. Special commands
 		Engine supports 2 special commands
 
-		0xFE -> Loop open
-		0xF0 -> Change panning
+		0xF0 -> Loop open
+		0xF1 -> Change panning
 
-		## 0xFE Loop syntax:
-			0xFE, address_lo, address_hi, how many times
+		## 0xF0 Loop syntax:
+			0xF0, address_lo, address_hi, how many times
 
 		I recomnd using ASM for making tracks with loops
 		example from track loop_test:
@@ -117,14 +117,14 @@
 			loop_start:
 			    .db 0x01, 0x11, 0x21, 0x31
 			    .db 0x41, 0x51, 0x61, 0x71
-			    .db LOOP_OPEN	-> 0xFE
+			    .db LOOP_OPEN	-> 0xF0
 			    .dw loop_start 	-> address where to jump
 			    .db 0x02		-> how many times
 			    .db STOP
 		if you want infinite loop simply use 0xFF for how many times
 
-		## 0xF0 Change panning syntax:
-			0xF0, bit mask
+		## 0xF1 Change panning syntax:
+			0xF1, bit mask
 		    8      7      6      5      4      3      2      1
 		| CH4L | CH4R | CH3L | CH3R | CH2L | CH2R | CH1L | CH1R |
 		
