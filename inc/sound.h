@@ -42,8 +42,8 @@
 #define TEMPO      0xD
 
 // special effects
-#define OPEN_LOOP  0xE
-#define CH_PAN     0x0
+#define OPEN_LOOP  0x0
+#define CH_PAN     0x1
 
 #define MAKE_NOTE(note, len)   (((note) << 4) | ((len) & 0x0F))
 #define STOP         0xFF
@@ -87,6 +87,9 @@
 //-------------------------------------
 
 typedef void (*jumptable)(void);    // jump table type for functions
+
+typedef uint8_t* (*instr_func)(uint8_t*); 
+typedef uint8_t* (*sfx_func)(uint8_t*);
 
 //-------------------------------------
 // channel structs
@@ -217,12 +220,14 @@ void update_channel2(void);
 void update_channel3(void);
 
 //---------- instrument funcs
-void process_instr_ch3(void);
-void process_instr_ch2(void);
-void process_instr_ch1(void);
+uint8_t *process_instr_ch3(uint8_t *temp_p);
+uint8_t *process_instr_ch2(uint8_t *temp_p);
+uint8_t *process_instr_ch1(uint8_t *temp_p);
 
 //---------- sfx func
 void simple_sfx_handler(void);
+uint8_t *sfx_loop_open(uint8_t *temp_p);
+uint8_t *sfx_panning(uint8_t *temp_p);
 
 void stop_channel(void);
 void stop_track(void);
