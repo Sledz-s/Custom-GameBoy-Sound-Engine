@@ -57,17 +57,17 @@ void main(void) {
     BGP_REG = DMG_BLACK;
     DISPLAY_ON;
 
-    while (TRUE) {
-        joy = joypad();
-        
-        sprintf(buffer, "ID\x1A%u", track_id);
-        set_bkg_tiles(1, 7, 6, 1, buffer);
-        
-        set_bkg_tiles(1, 0, 9, 1, "GB\0MODEL\0");
-        set_bkg_tiles(10, 0, 3, 1, model_buffer);
-        sound_test();
+    set_bkg_tiles(1, 0, 9, 1, "GB\0MODEL\0");
+    set_bkg_tiles(10, 0, 3, 1, model_buffer);
 
+    sprintf(buffer, "ID\x1A%u", track_id);
+    set_bkg_tiles(1, 7, 6, 1, buffer);
+
+    while (1) {
+        joy = joypad();
+        sound_test();
         prev_joy = joy;
+        
         vsync();
         BGP_REG = DMG_WHITE;
         update_song();
@@ -79,10 +79,14 @@ void sound_test(void) {
     if (PRESSED_JOY_LEFT) {
         if (track_id != 0) {
             track_id--;
+            sprintf(buffer, "ID\x1A%u", track_id);
+            set_bkg_tiles(1, 7, 6, 1, buffer);
         }
     } else if (PRESSED_JOY_RIGHT){
         if (track_id != 2) {
             track_id++;
+            sprintf(buffer, "ID\x1A%u", track_id);
+            set_bkg_tiles(1, 7, 6, 1, buffer);
         }
     }
 
@@ -92,6 +96,5 @@ void sound_test(void) {
     if (PRESSED_JOY_B) {
         stop_track();
     }
-
     return;
 }

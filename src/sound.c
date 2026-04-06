@@ -10,9 +10,11 @@
  *    \    \_\  \|    |   \  /        (  <_> )  |  /   |  \/ /_/ |   |        \   |  \/ /_/  >  |   |  \  ___/ 
  *     \______  /|______  / /_______  /\____/|____/|___|  /\____ |  /_______  /___|  /\___  /|__|___|  /\___  >
  *            \/        \/          \/                  \/      \/          \/     \//_____/         \/     \/ 
- *      ver. 1.4
- *  
+ *      ver. 1.5
+ *      
  *      What's new:
+ *        ver: 1.5
+ *          Format of instrument for CH1 and CH2 was change to optimize RAM, see README
  *        ver: 1.4
  *          More optimazation and changed panning and looping command, see README
  *        ver: 1.3
@@ -25,8 +27,6 @@
  *        ver: 1.1
  *          optimize write_wave_to_RAM, init_track
  */
-
-
 #pragma bank 0
 
 #include <gb/gb.h>
@@ -42,7 +42,6 @@
 struct ch1_reg_t ch1_reg;
 struct ch2_reg_t ch2_reg;
 struct ch3_reg_t ch3_reg;
-struct ch4_reg_t ch4_reg;
 
 struct channel_data_t ch_data[4];
 
@@ -54,7 +53,9 @@ SFR note_hi;
 SFR note_lo;
 SFR channel;
 
+
 // RAM
+uint8_t sfx_flag = 0;
 uint8_t sound_engine_state = 0;
 struct channel_data_t *curr_ch_ptr;
 
@@ -80,7 +81,6 @@ const uint8_t freqTableHigh[] = {
 
 const uint8_t octaveOffsets[] = { 0, 12, 24, 36, 48, 60 };
 
-
 //--------------------------------------
 // jump tables
 static const uint8_t * const jt_wave[] = {
@@ -102,9 +102,9 @@ const jumptable channel_updates[] = {
     update_channel3
 };
 
-const sfx_func sfx_handle[] = {
-    sfx_loop_open,
-    sfx_panning
+const fx_func fx_handle[] = {
+    fx_loop_open,
+    fx_panning
 };
 
 //--------------------------------------
@@ -128,11 +128,9 @@ const uint8_t* track_pointers[][4] = {
 
 void write_wave_to_RAM(const uint8_t *wavetable) {
     TURN_OFF_CH3;
+    
+    uint8_t *wave_ram = WAVERAM_START; 
 
-    //pointer to the start of wave ram
-    uint8_t *wave_ram = (uint8_t *)0xFF30; 
-
-    // for (uint8_t i = 16; i != 0; i--) AUD3WAVE[i] = wavetable[i];
     // unrolled loop 
     *wave_ram++ = *wavetable++; *wave_ram++ = *wavetable++;
     *wave_ram++ = *wavetable++; *wave_ram++ = *wavetable++;
@@ -152,12 +150,8 @@ void play_note(void) {
     if (note_hi > NOTE_MAX) return;
     curr_ch_ptr->tick_counter = (curr_ch_ptr->ticks_per_row * note_lo) - 1;
 
-    if (note_hi == NOTE_PAUSE) {            // Pause
-        if (channel == 2) TURN_OFF_CH3;     // turn off ch3 during pause
-        else stop_channel();
-        return;
-    }
-
+    if (note_hi == NOTE_PAUSE) return stop_channel();
+    
     if (channel == 3) {
         NR42_REG = my_drums[note_hi].env; 
         NR43_REG = my_drums[note_hi].freq;
@@ -194,7 +188,7 @@ void play_event(void) {
         }
 
         if (note_hi == SPECIAL) {
-            temp_p = sfx_handle[note_lo & 0x01](temp_p);
+            temp_p = fx_handle[note_lo & 0x01](temp_p);
             continue;
 
         } else if (note_hi == OCTAVE) {
@@ -212,6 +206,7 @@ void play_event(void) {
 //--------------------------------------
 
 void update_channel1(void) {
+    if (sfx_flag & SFX_CH1) return;
     UPDATE_NR11;
     NR13_REG = note_lo;
     UPDATE_NR12;
@@ -219,6 +214,7 @@ void update_channel1(void) {
 }
 
 void update_channel2(void) {
+    if (sfx_flag & SFX_CH2) return;
     UPDATE_NR21;
     NR23_REG = note_lo;
     UPDATE_NR22;
@@ -226,6 +222,7 @@ void update_channel2(void) {
 }
 
 void update_channel3(void) {
+    if (sfx_flag & SFX_CH3) return;
     TURN_ON_CH3;
     UPDATE_NR31;
     UPDATE_NR32;
@@ -233,51 +230,21 @@ void update_channel3(void) {
     NR34_REG = ch3_reg.restart | note_hi;
 }
 
+//--------------------------------------
+
 uint8_t *process_instr_ch1(uint8_t *temp_p) {
     struct ch1_reg_t *ch_reg = &ch1_reg;
-    
-    uint8_t event = *temp_p++;
+    ch_reg->duty_and_lenght = *temp_p++;   
+    ch_reg->envelope = *temp_p++;
 
-    note_hi = event & 0x03;                 
-    note_lo = event >> 2;                   
-
-    ch_reg->patternDuty = note_hi;
-    ch_reg->soundLength = note_lo;
-        
-    event = *temp_p++;
-    
-    uint8_t envM = (event >> 3) & 0x01;     
-    uint8_t envV = event >> 4;              
-    uint8_t envS = event & 0x07;            
-
-       
-    ch_reg->envInitialValue = envV;
-    ch_reg->envMode = envM;
-    ch_reg->envNbSweep = envS;
     return temp_p;
 }
 
 uint8_t * process_instr_ch2(uint8_t *temp_p) {
     struct ch2_reg_t *ch_reg = &ch2_reg;
+    ch_reg->duty_and_lenght = *temp_p++;   
+    ch_reg->envelope = *temp_p++;
 
-    uint8_t event = *temp_p++;
-
-    note_hi = event & 0x03;                 
-    note_lo = event >> 2;                   
-
-    ch_reg->patternDuty = note_hi;
-    ch_reg->soundLength = note_lo;
-        
-    event = *temp_p++;
-    
-    uint8_t envM = (event >> 3) & 0x01;     
-    uint8_t envV = event >> 4;              
-    uint8_t envS = event & 0x07;           
-
-       
-    ch_reg->envInitialValue = envV;
-    ch_reg->envMode = envM;
-    ch_reg->envNbSweep = envS;
     return temp_p;
 }
 
@@ -296,7 +263,7 @@ uint8_t * process_instr_ch3(uint8_t *temp_p) {
 
 //--------------------------------------
 
-uint8_t *sfx_loop_open(uint8_t *temp_p){
+uint8_t *fx_loop_open(uint8_t *temp_p) {
     note_lo = *temp_p++;
     note_hi = *temp_p++;
         
@@ -319,7 +286,7 @@ uint8_t *sfx_loop_open(uint8_t *temp_p){
     return temp_p;
 }
 
-uint8_t *sfx_panning(uint8_t *temp_p) {
+uint8_t *fx_panning(uint8_t *temp_p) {
     NR51_REG = *temp_p++;
     return temp_p;
 }
@@ -342,22 +309,35 @@ void init_track(uint8_t track_id) {
     if (track_id > 2) track_id = 0; 
 
     uint8_t **selected_track = track_pointers[track_id];
-    struct channel_data_t *curr_ch = &ch_data[0];
+    curr_ch_ptr = &ch_data[0];
     uint8_t i = 4;
 
-    do {
-        curr_ch->ptr = *selected_track;
+    NR51_REG = HEAR_ALL_CH;
 
-        curr_ch->curr_octv = 3;
-        curr_ch->tick_counter = i;
-        curr_ch->ticks_per_row = 7;
-        curr_ch->loop_iterator = 0;
-        curr_ch->effect_flags = 0;
-        curr_ch++;
+    do {
+        curr_ch_ptr->ptr = *selected_track;
+
+        curr_ch_ptr->curr_octv = DEFAULT_OCTV;
+        curr_ch_ptr->tick_counter = i;
+        curr_ch_ptr->ticks_per_row = DEFAULT_TICKS_PER_ROW;
+        curr_ch_ptr->loop_iterator = CLEAR;
+        curr_ch_ptr->effect_flags = CLEAR;
+        curr_ch_ptr++;
         selected_track++;
 
     } while (--i);
 }
+
+void update_song(void) {
+    if (!sound_engine_state) return;
+    
+    curr_ch_ptr = &ch_data[0];
+    for (channel = 0;channel < 4; channel++) {
+        channel_update();
+        curr_ch_ptr++;
+    }
+}
+
 
 void stop_channel(void) {
     switch (channel) {
@@ -379,16 +359,6 @@ void channel_update(void) {
         return;
     }
     play_event();
-}
-
-void update_song(void) {
-    if (!sound_engine_state) return;
-    
-    curr_ch_ptr = &ch_data[0];
-    for (channel = 0;channel < 4; channel++) {
-        channel_update();
-        curr_ch_ptr++;
-    }
 }
 
 //--------------------------------------
@@ -422,5 +392,5 @@ void stop_track(void) {
     NR42_REG = MUTE; 
     NR44_REG = CH_RESTART; 
 
-    for (uint8_t i = 0; i < 4 ; i++) ch_data[i].ptr = NULL;
+    for (uint8_t i = 4; i != 0 ; i--) ch_data[i].ptr = NULL;
 }

@@ -2,7 +2,7 @@
 
 # ====================================
 
-    sl3dz sound engie for GB version 1.0
+    sl3dz sound engine for GB version 1.5
 
         free to use sound engine
 			written in C with
@@ -66,14 +66,15 @@
 		0xFE      |    loop   |  0xFE [ADDR_LOW] [ADDR_HIGH] [COUNT] - Repeats a section
 		0xFF      |    stop   |  Ends playback on the channel
 		
+		> **Note:** octave only accept values from 2 to 7
 
     ## 3. Creating instruments
-        To create instrument you have to use 0xDY command
+        To create instrument you have to use 0xDX command
         bytes following the tempo command are use for instrument
 
         ### Pulse Channels (CH1 & CH2)
         
-            Byte 1 (LLLL LLDD): L = Length, D = Duty Cycle.
+            Byte 1 (DDLL LLLL): L = Length, D = Duty Cycle.
             Byte 2 (VVVV MSSS): V = Initial Volume, M = Mode (0: Down, 1: Up), S = Envelope Steps
 		
 		> **Note:** if you set S to 0, your instrument will have a constant volume
@@ -99,7 +100,8 @@
         X: Preset ID
         Y: Note Lenght 
 		
-		> **Note:** octave is ignored and tempo doesn't move pointer
+		> **Note:** octave is ignored and tempo doesn't allow making new instruments
+
 	## 4. Special commands
 		Engine supports 2 special commands
 
@@ -125,7 +127,30 @@
 
 		## 0xF1 Change panning syntax:
 			0xF1, bit mask
+
 		    8      7      6      5      4      3      2      1
-		| CH4L | CH4R | CH3L | CH3R | CH2L | CH2R | CH1L | CH1R |
+		| CH4L | CH3L | CH2L | CH1L | CH4R | CH3R | CH2R | CH1R |
 		
+		for example:
+		0xF1, 0x11 -> only CH1 plays in right and left ear
+		0xF1, 0x88 -> only CH4 plays in right and left ear
+		0xF1, 0xF0 -> all channels play in only left ear
+
+# ====================================
+	# COMPILATION
+
+	For max performace use these flags when compiling sound.c:
+		-Wf--opt-code-speed and -Wf--max-allocs-per-node5000 
+
+# ====================================
+	# ADDITIONAL INFORMATION
+
+	Sound engine takes aroud ~1.3 kb and 45 bytes for variables
+
+# ====================================
+	# PLANNING FEATURES
+
+	[] Arpeggioes support
+	[] Sound effects support  
+
 # ====================================
